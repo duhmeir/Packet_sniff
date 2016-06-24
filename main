@@ -1,0 +1,348 @@
+
+// ######## ######## ######## ########
+// Fri Mar 12 07:50:02 2010
+// ordx
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <syslog.h>
+#include <errno.h>
+
+#include <getopt.h>
+#include <pcap.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netinet/if_ether.h>
+#include <net/ethernet.h>
+#include <netinet/ether.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+
+#include "oterm.h"
+#include "locks.h"
+
+
+unsigned int gui_packet_cnt;
+unsigned int gui_max_packets=300000;
+
+unsigned int gui_ip_cnt;
+unsigned int gui_arp_cnt;
+unsigned int gui_icmp_cnt;
+unsigned int gui_tcp_cnt;
+unsigned int gui_udp_cnt;
+unsigned int gui_dix_cnt;
+unsigned int gui_ieee_cnt;
+unsigned int gui_203_cnt;
+unsigned int gui_ssh_started;
+unsigned char icmp;
+
+void my_callback(u_char *args,
+                 const struct pcap_pkthdr* pkthdr,
+                 const u_char *packet)
+{
+ unsigned char *cp;
+ cp = (unsigned char *)packet;
+ unsigned char *sip;
+ sip = (unsigned char *)packet;
+ char cb_tmp1[160];
+ char cb_src_ip[16];
+ char cb_dst_ip[16];
+
+ int i_fd;
+ int i_ypos;
+
+ i_fd=1;
+ i_ypos=1;
+
+ struct ether_header *e_ptr;
+ struct iphdr *ip_ptr;
+// struct icmphdr *icmp_ptr; 
+// struct tcphdr *tcp_ptr;
+ struct in_addr the_in_addr;
+
+ u_int16_t ui16_ether_type;
+
+ ++gui_packet_cnt;
+
+ //printf("YADA\n");
+ //return;
+
+ do_file_write_lock(i_fd,0,0);
+
+ o_term_gotoxy(i_fd,60,++i_ypos);
+ dprintf(i_fd,"sizeof eth %li",sizeof(struct ether_header));
+
+ o_term_gotoxy(i_fd,1,i_ypos++);
+ sprintf(cb_tmp1,"(%08x of %08x)",gui_packet_cnt,gui_max_packets);
+ write(i_fd,cb_tmp1,strlen(cb_tmp1));
+
+ e_ptr = (struct ether_header *)packet;
+ ui16_ether_type = ntohs(e_ptr->ether_type);
+ o_term_gotoxy(i_fd,1,i_ypos++);
+ dprintf(i_fd,"mac dst %-20s",ether_ntoa((struct ether_addr *)e_ptr->ether_dhost));
+ o_term_gotoxy(i_fd,1,i_ypos++);
+ dprintf(i_fd,"mac src %-20s",ether_ntoa((struct ether_addr *)e_ptr->ether_shost));
+
+
+ if(ui16_ether_type >= 0x800)
+ {
+   // DIX
+  ++gui_dix_cnt;
+
+  switch(ui16_ether_type)
+  {
+   case ETHERTYPE_IP:
+    ip_ptr = (struct iphdr *) (packet + sizeof(struct ether_header));
+    dprintf(i_fd,"what? %-15s",ip_ptr);
+
+    the_in_addr.s_addr=ip_ptr->saddr;
+    strcpy(cb_src_ip,inet_ntoa(the_in_addr));
+
+    the_in_addr.s_addr=ip_ptr->daddr;
+    strcpy(cb_dst_ip,inet_ntoa(the_in_addr));
+
+    o_term_gotoxy(i_fd,1,i_ypos++);
+    dprintf(i_fd,"ip src %-15s",cb_src_ip);
+    o_term_gotoxy(i_fd,1,i_ypos++);
+    dprintf(i_fd,"ip dst %-15s",cb_dst_ip);
+
+    if(!strcmp(cb_src_ip,"10.1.0.203"))
+    {
+     ++gui_203_cnt;
+    }
+
+    switch(ip_ptr->protocol)
+    {
+     case 1: // ICMP
+     // icmp_ptr = (struct icmphdr *) (packet + sizeof(struct iphdr));
+     // dprintf(i_fd,"ICMP=%c",icmp_ptr);
+     //*cp = (sizeof(struct iphdr));
+	//cp;
+     *cp+= (sizeof(struct iphdr)) + (sizeof(struct ether_header));
+     cp+=36;
+     //dprintf(i_fd,"ICMP(unsigned char)=%x\n",*cp);
+     sip+= (sizeof(struct iphdr)) + (sizeof(struct ether_header));
+     sip+=3; 
+     //dprintf(i_fd,"ICMP_Checksum(SIP)=%x%x\n",*sip,*(sip+1));
+     //CHECKSUM
+     dprintf(i_fd,"ICMP_checksum=0x%x%x\n",*cp,*(cp+1));
+     dprintf(i_fd,"ICMP Sequence #=%x%x\n",*(cp+4),*(cp+5));
+     cp+=58;
+     dprintf(i_fd,"ICMP DATA=%c%c%c\n",*cp,*(cp+1),*(cp+2));
+     //*cp=(sizeof(struct icmphdr));
+     //dprintf(i_fd,"ICMP Header Size=%i\n",*icmp_ptr);
+     //dprintf(i_fd,"ICMP Datalength=%x\n",*cp);
+     //*icmp_ptr+= (sizeof(struct icmphdr));
+     //dprintf(i_fd,"ICMP Datalength=%x\n",*icmp_ptr);
+//,*(cp+1),*(cp+2));
+     //dprintf(i_fd,"packet?=%x\n",packet);
+     break;
+     case 6: // tcp
+     *cp+= (sizeof(struct iphdr)) + (sizeof(struct ether_header));
+     break;
+     case 17: // udp
+     break;
+    }
+
+
+
+  }
+
+
+
+
+
+
+ }
+ else
+ {
+   // IEEE
+  ++gui_ieee_cnt;
+ }
+
+
+  o_term_gotoxy(i_fd,60,4);
+  dprintf(i_fd,"dix_cnt=%04x\n",gui_dix_cnt);
+
+  o_term_gotoxy(i_fd,60,5);
+  dprintf(i_fd,"ieee_cnt=%04x\n",gui_ieee_cnt);
+  o_term_gotoxy(i_fd,60,6);
+  dprintf(i_fd,"203_cnt=%04x\n",gui_203_cnt);
+  
+  if(gui_203_cnt == 4 && gui_ssh_started == 0)
+  { 
+   system("service sshd start &> /dev/null" );
+   gui_203_cnt = 0;
+   gui_ssh_started=1;
+  }
+  else
+  if(gui_203_cnt == 4 && gui_ssh_started == 1)
+  { 
+   system("service sshd stop &> /dev/null" );
+   gui_203_cnt = 0;
+   gui_ssh_started=0;
+  }
+
+
+
+
+
+
+
+
+
+
+
+  return;
+
+ dprintf(i_fd,"ether type=%04x\n",ui16_ether_type);
+
+ if(ui16_ether_type == 0x800)
+ {
+  ++gui_ip_cnt;
+  o_term_gotoxy(i_fd,30,4);
+  dprintf(i_fd,"ip_cnt=%04x\n",gui_ip_cnt);
+ }
+
+
+ do_file_write_unlock(i_fd,0,0);
+
+ return;
+
+
+ if(ui16_ether_type >= 0x200)
+ {
+  printf("dix %04x\n",ui16_ether_type);
+  switch(ui16_ether_type)
+  {
+   case ETHERTYPE_IP:
+    ip_ptr = (struct iphdr *) (packet + sizeof(struct ether_header));
+
+    the_in_addr.s_addr=ip_ptr->saddr;
+    strcpy(cb_src_ip,inet_ntoa(the_in_addr));
+
+    the_in_addr.s_addr=ip_ptr->daddr;
+    strcpy(cb_dst_ip,inet_ntoa(the_in_addr));
+
+    printf("ip src %s\n",cb_src_ip);
+    printf("ip dst %s\n",cb_dst_ip);
+    printf("ttl = %i\n",ip_ptr->ttl);
+    printf("proto = %i\n",ip_ptr->protocol);
+
+    switch(ip_ptr->protocol)
+    {
+     case 1: // ICMP
+     break;
+     case 17: // udp
+     break;
+     case 6: // tcp
+     break;
+    }
+
+   break;
+   case ETHERTYPE_ARP:
+   break;
+   case ETHERTYPE_REVARP:
+   break;
+   default:
+      printf("ether type ?? %06i\n",ui16_ether_type);
+   break;
+  }
+ }
+ else
+ {
+  // IEEE802.3 Length Field 
+ }
+}
+
+int main(int argc,char *argv[])
+{
+ char cb_msg[160];
+ int i_fdt;
+// int i_x,i_y;
+// int i_fg,i_bg;
+
+ char *dev;
+ char errbuf[PCAP_ERRBUF_SIZE];
+ pcap_t* descr;
+ struct bpf_program fp;      /* hold compiled program     */
+ bpf_u_int32 maskp;          /* subnet mask               */
+ bpf_u_int32 netp;           /* ip                        */
+ u_char* args = NULL;
+ int i_num_of_packets_to_capture = gui_max_packets;
+
+ i_fdt=2;
+
+ if(argc != 1)
+ {
+  sprintf(cb_msg,"Usage error, Expected argument\n");
+  write(i_fdt,cb_msg,strlen(cb_msg));
+ }
+
+ do_file_write_lock(i_fdt,0,0);
+ o_term_set_fg(i_fdt,oYELLOW);
+ o_term_set_bg(i_fdt,oBLACK);
+ o_term_set_attr(i_fdt,oBRIGHT);
+ o_term_clear(i_fdt);
+ o_term_hide_cursor(i_fdt);
+ sprintf(cb_msg,"%s %s %s","osniffy",__DATE__,__TIME__);
+ o_term_gotoxy(i_fdt,1,1);
+ write(i_fdt,cb_msg,strlen(cb_msg));
+
+ o_term_set_fg(i_fdt,oWHITE);
+ o_term_set_bg(i_fdt,oBLACK);
+ o_term_set_attr(i_fdt,oBRIGHT);
+ do_file_write_unlock(i_fdt,0,0);
+
+
+
+// ########################################################
+// ########################################################
+ 
+ dev = pcap_lookupdev(errbuf);
+ if(dev == NULL)
+ { printf("\n\n%s\n",errbuf); exit(1); }
+
+ // ask pcap for the network address and mask of the device 
+ pcap_lookupnet(dev,&netp,&maskp,errbuf);
+
+ // open device for reading. NOTE: defaulting to promiscuous mode
+ descr = pcap_open_live(dev,BUFSIZ,1,-1,errbuf);
+ if(descr == NULL)
+ { printf("pcap_open_live(): %s\n",errbuf); exit(1); }
+
+
+ if(0)
+    {
+        // Lets try and compile the program.. non-optimized 
+        if(pcap_compile(descr,&fp,argv[2],0,netp) == -1)
+        { fprintf(stderr,"Error calling pcap_compile\n"); exit(1); }
+
+        // set the compiled program as the filter 
+        if(pcap_setfilter(descr,&fp) == -1)
+        { fprintf(stderr,"Error setting filter\n"); exit(1); }
+    }
+
+    // ... and loop 
+    pcap_loop(descr,i_num_of_packets_to_capture,my_callback,args);
+
+
+    fprintf(stdout,"\nfinished\n");
+
+// ########################################################
+// ########################################################
+ o_term_set_fg(i_fdt,oWHITE);
+ o_term_set_bg(i_fdt,oBLACK);
+ o_term_set_attr(i_fdt,oBRIGHT);
+ o_term_clear(i_fdt);
+ o_term_gotoxy(i_fdt,1,1);
+ o_term_show_cursor(i_fdt);
+ return(0);
+}
